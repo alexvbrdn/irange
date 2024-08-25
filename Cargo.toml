@@ -1,0 +1,25 @@
+[package]
+name = "irange"
+version = "0.1.0"
+edition = "2021"
+authors = ["Alexandre van Beurden"]
+repository = "https://github.com/alexvbrdn/irange"
+license = "MIT"
+keywords = [
+    "range",
+    "integer",
+    "set",
+    "intersection",
+    "union",
+    "difference",
+    "complement",
+]
+description = "A data structure to store and manipulate ranges of integers with set operations"
+readme = "README.md"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "my_benchmark"
+harness = false
