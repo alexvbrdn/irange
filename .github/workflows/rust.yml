@@ -19,7 +19,7 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Test & Lint
-      run: 
+      run: |
         cargo test
         cargo clippy
     - name: Deploy
