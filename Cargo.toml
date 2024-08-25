@@ -1,6 +1,6 @@
 [package]
 name = "irange"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Alexandre van Beurden"]
 repository = "https://github.com/alexvbrdn/irange"
