@@ -7,8 +7,6 @@ repository = "https://github.com/alexvbrdn/irange"
 license = "MIT"
 keywords = [
     "range",
-    "integer",
-    "set",
     "intersection",
     "union",
     "difference",
