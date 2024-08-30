@@ -9,6 +9,8 @@ Supported types: `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`, `i16`, `i32`,
 ## Examples
 
 ```rust
+use irange::RangeSet;
+
 let range1 = RangeSet::<i64>::new_from_ranges(&[AnyRange::from(3..=4), AnyRange::from(7..9)]);
 let range2 = RangeSet::<i64>::new_from_range(-2..=4);
 

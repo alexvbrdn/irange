@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use irange::RangeSet;
+use irange::{range::AnyRange, RangeSet};
+use rand::{seq::SliceRandom, thread_rng};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let range_regex_small_w = RangeSet(vec![
@@ -132,6 +133,23 @@ fn criterion_benchmark(c: &mut Criterion) {
         92864, 92873, 93008, 93017, 120782, 120831, 123200, 123209, 123632, 123641, 124144, 124153,
         125264, 125273, 130032, 130041,
     ]);
+
+    let mut new_from_ranges =
+        Vec::with_capacity(range_regex_small_w.0.len() / 2 + range_regex_small_d.0.len() / 2);
+    for i in (0..range_regex_small_w.0.len()).step_by(2) {
+        let (min, max) = (range_regex_small_w.0[i], range_regex_small_w.0[i + 1]);
+        new_from_ranges.push(AnyRange::new(min, max));
+    }
+    for i in (0..range_regex_small_d.0.len()).step_by(2) {
+        let (min, max) = (range_regex_small_d.0[i], range_regex_small_d.0[i + 1]);
+        new_from_ranges.push(AnyRange::new(min, max));
+    }
+    let mut rng = thread_rng();
+    new_from_ranges.shuffle(&mut rng);
+
+    c.bench_function("new_from_ranges", |b| {
+        b.iter(|| RangeSet::new_from_ranges(&new_from_ranges))
+    });
 
     c.bench_function("union", |b| {
         b.iter(|| range_regex_small_w.union(&range_regex_small_d))

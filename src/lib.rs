@@ -145,6 +145,7 @@ impl<T: NumericInteger> RangeSet<T> {
             .iter()
             .map(|range| range.get_bounds())
             .filter(|(min, max)| max >= min)
+            .copied()
             .collect();
         ranges.sort_by(|r1, r2| r1.0.cmp(&r2.0));
 
@@ -161,6 +162,7 @@ impl<T: NumericInteger> RangeSet<T> {
             }
         }
 
+        bounds.shrink_to_fit();
         RangeSet(bounds)
     }
 
@@ -330,7 +332,7 @@ impl<T: NumericInteger> RangeSet<T> {
             return self.clone();
         }
 
-        let mut new_range = vec![];
+        let mut new_range = Vec::with_capacity(self.0.len() + that.0.len());
 
         let mut self_i = 0;
         let mut that_i = 0;
@@ -375,6 +377,7 @@ impl<T: NumericInteger> RangeSet<T> {
             current_max = new_range[current_i.unwrap() + 1];
         }
 
+        new_range.shrink_to_fit();
         RangeSet(new_range)
     }
 
@@ -429,7 +432,15 @@ impl<T: NumericInteger> RangeSet<T> {
     /// let intersection = range1.intersection(&range2);
     /// ```
     pub fn intersection(&self, that: &RangeSet<T>) -> RangeSet<T> {
-        let mut new_range: Vec<T> = Vec::new();
+        if self.is_empty() || that.is_empty() {
+            return RangeSet::empty();
+        } else if self.is_total() {
+            return that.clone();
+        } else if that.is_total() {
+            return self.clone();
+        }
+
+        let mut new_range = Vec::with_capacity(self.0.len() + that.0.len());
 
         let mut i = 0;
         let mut j = 0;
@@ -456,6 +467,7 @@ impl<T: NumericInteger> RangeSet<T> {
             }
         }
 
+        new_range.shrink_to_fit();
         RangeSet(new_range)
     }
 
@@ -478,7 +490,7 @@ impl<T: NumericInteger> RangeSet<T> {
             return Self::empty();
         }
 
-        let mut new_range = vec![];
+        let mut new_range = Vec::with_capacity(self.0.len());
 
         for i in (0..self.0.len()).step_by(2) {
             let (min, max) = (self.0[i], self.0[i + 1]);
@@ -499,6 +511,7 @@ impl<T: NumericInteger> RangeSet<T> {
             new_range.push(T::max_value());
         }
 
+        new_range.shrink_to_fit();
         RangeSet(new_range)
     }
 

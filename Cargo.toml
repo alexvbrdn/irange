@@ -1,6 +1,6 @@
 [package]
 name = "irange"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["Alexandre van Beurden"]
 repository = "https://github.com/alexvbrdn/irange"
@@ -17,6 +17,7 @@ readme = "README.md"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.8"
 
 [[bench]]
 name = "my_benchmark"
