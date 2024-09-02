@@ -54,12 +54,14 @@ println!();
 
 ## Supported Operations
 
-- `union`
-- `intersection`
-- `difference`
-- `complement`
-- `has_intersection`
-- `contains`
-- `contains_all`
-- `is_total`
-- `is_empty`
+| Operation | Time complexity | Space complexity |
+|---|---|---|
+| `union` | `O(n)` | `O(n)` |
+| `intersection` | `O(n)` | `O(n)` |
+| `difference` | `O(n)` | `O(n)` |
+| `complement` | `O(n)` | `O(n)` |
+| `has_intersection` | `O(n)` | `O(1)` |
+| `contains` | `O(n)` | `O(1)` |
+| `contains_all` | `O(n)` | `O(1)` |
+| `is_total` | `O(1)` | `O(1)` |
+| `is_empty` | `O(1)` | `O(1)` |
