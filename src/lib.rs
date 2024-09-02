@@ -1,3 +1,6 @@
+#[cfg(feature = "serde")]
+pub use serde::{Deserialize, Serialize};
+
 use std::ops::{Bound, RangeBounds};
 
 use integer::NumericInteger;
@@ -23,6 +26,7 @@ fn range_to_bounds<T: NumericInteger, R: RangeBounds<T>>(range: &R) -> (T, T) {
 
 /// A structure holding a collection of `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`, `i16`, `i32`, `i64`, `i128` or `isize`.
 #[derive(PartialEq, Eq, Hash, Clone, Debug, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RangeSet<T: NumericInteger>(
     /// In this collection all the elements with even index represent the lower bounds (inclusive) and all the odd index represent the upper bounds (inclusive).
     pub Vec<T>,
@@ -490,7 +494,7 @@ impl<T: NumericInteger> RangeSet<T> {
             return Self::empty();
         }
 
-        let mut new_range = Vec::with_capacity(self.0.len());
+        let mut new_range = Vec::with_capacity(self.0.len() + 2);
 
         for i in (0..self.0.len()).step_by(2) {
             let (min, max) = (self.0[i], self.0[i + 1]);
@@ -860,5 +864,36 @@ mod tests {
         println!();
 
         Ok(())
+    }
+
+    #[cfg(feature = "serde")]
+    macro_rules! serde_test {
+        ($($t:ty),*) => {
+            $(
+                let range = RangeSet::<$t>::empty();
+                let serialized = serde_json::to_string(&range).unwrap();
+                let unserialized: RangeSet<$t> = serde_json::from_str(&serialized).unwrap();
+                assert_eq!(range, unserialized);
+
+                let range = RangeSet::<$t>::total();
+                let serialized = serde_json::to_string(&range).unwrap();
+                let unserialized: RangeSet<$t> = serde_json::from_str(&serialized).unwrap();
+                assert_eq!(range, unserialized);
+
+                let range =
+                    RangeSet::<$t>::new_from_ranges(&[AnyRange::from(3..=4), AnyRange::from(7..9)]);
+                let serialized = serde_json::to_string(&range).unwrap();
+                let unserialized: RangeSet<$t> = serde_json::from_str(&serialized).unwrap();
+                assert_eq!(range, unserialized);
+            )*
+        };
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn serde_test() {
+        serde_test!(
+            u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+        );
     }
 }

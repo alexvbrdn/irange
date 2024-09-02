@@ -6,6 +6,22 @@ A data structure to store and manipulate ranges of integers with set operations.
 
 Supported types: `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`, `i16`, `i32`, `i64`, `i128` and `isize`.
 
+## Installation
+
+Add the following line in your `Cargo.toml`:
+
+```toml
+[dependencies]
+irange = "1.1"
+```
+
+If you need `serde` support you can include the following feature flag:
+
+```toml
+[dependencies]
+irange = { version = "1.1", features = ["serde"] }
+```
+
 ## Examples
 
 ```rust

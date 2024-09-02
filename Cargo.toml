@@ -1,23 +1,27 @@
 [package]
 name = "irange"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["Alexandre van Beurden"]
 repository = "https://github.com/alexvbrdn/irange"
 license = "MIT"
-keywords = [
-    "range",
-    "intersection",
-    "union",
-    "difference",
-    "complement",
-]
+keywords = ["range", "intersection", "union", "difference", "complement"]
 description = "A data structure to store and manipulate ranges of integers with set operations"
 readme = "README.md"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"], optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 rand = "0.8"
+serde_json = "1.0"
+
+[features]
+serde = ["dep:serde"]
+
+[package.metadata.docs.rs]
+features = ["serde"]
 
 [[bench]]
 name = "my_benchmark"
