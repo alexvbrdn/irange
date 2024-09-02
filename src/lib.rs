@@ -205,7 +205,7 @@ impl<T: NumericInteger> RangeSet<T> {
         RangeSet(vec![T::min_value(), T::max_value()])
     }
 
-    /// Return `true` if contains all the possible values.
+    /// Return `true` if it contains all the possible values.
     ///
     /// # Example:
     ///
@@ -223,7 +223,7 @@ impl<T: NumericInteger> RangeSet<T> {
         !self.0.is_empty() && self.0[0] == T::min_value() && self.0[1] >= T::max_value()
     }
 
-    /// Return `true` if does not contain any value.
+    /// Return `true` if it does not contain any value.
     ///
     /// # Example:
     ///
@@ -241,7 +241,7 @@ impl<T: NumericInteger> RangeSet<T> {
         self.0.is_empty()
     }
 
-    /// Return `true` if contain the given value.
+    /// Return `true` if it contains the given value.
     ///
     /// # Example:
     ///
@@ -270,7 +270,7 @@ impl<T: NumericInteger> RangeSet<T> {
         self.0[position] == value || position % 2 != 0
     }
 
-    /// Return `true` if contain the given `RangeSet`.
+    /// Return `true` if it contains the given `RangeSet`.
     ///
     /// # Example:
     ///
