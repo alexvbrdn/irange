@@ -54,14 +54,14 @@ println!();
 
 ## Supported Operations
 
-| Operation | Time complexity | Space complexity |
-|---|---|---|
-| `union` | `O(n)` | `O(n)` |
-| `intersection` | `O(n)` | `O(n)` |
-| `difference` | `O(n)` | `O(n)` |
-| `complement` | `O(n)` | `O(n)` |
-| `has_intersection` | `O(n)` | `O(1)` |
-| `contains` | `O(n)` | `O(1)` |
-| `contains_all` | `O(n)` | `O(1)` |
-| `is_total` | `O(1)` | `O(1)` |
-| `is_empty` | `O(1)` | `O(1)` |
+| Operation | Description | Time complexity | Space complexity |
+|---|---|---|---|
+| `union` | Compute the union with the given `RangeSet`. | `O(n)` | `O(n)` |
+| `intersection` | Compute the intersection with the given `RangeSet`. | `O(n)` | `O(n)` |
+| `difference` | Compute the difference with the given `RangeSet`. | `O(n)` | `O(n)` |
+| `complement` | Compute the complement. | `O(n)` | `O(n)` |
+| `has_intersection` | Return `true` if there is common value with the given `RangeSet`. | `O(n)` | `O(1)` |
+| `contains` | Return `true` if contain the given value. | `O(n)` | `O(1)` |
+| `contains_all` | Return `true` if contain the given `RangeSet`. | `O(n)` | `O(1)` |
+| `is_total` | Return `true` if contains all the possible values. | `O(1)` | `O(1)` |
+| `is_empty` | Return `true` if does not contain any value. | `O(1)` | `O(1)` |
