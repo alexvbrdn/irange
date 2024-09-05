@@ -376,9 +376,12 @@ impl<T: NumericInteger> RangeSet<T> {
 
                 self_i += 2;
             }
+            current_min = new_range[new_range.len() - 2];
+            current_max = new_range[new_range.len() - 1];
+            if current_max == T::max_value() {
+                break;
+            }
             current_i = Some(new_range.len() - 2);
-            current_min = new_range[current_i.unwrap()];
-            current_max = new_range[current_i.unwrap() + 1];
         }
 
         new_range.shrink_to_fit();
@@ -750,6 +753,17 @@ mod tests {
                 .union(&RangeSet(vec![97, 97]))
                 .0
         );
+
+        let range1 = RangeSet::new_from_ranges(&[
+            AnyRange::from(..=12),
+            AnyRange::from(15..=15),
+            AnyRange::from(18..),
+        ]);
+        let range2 = RangeSet::new_from_ranges(&[AnyRange::from(..=12), AnyRange::from(15..)]);
+
+        let range3 = RangeSet::new_from_ranges(&[AnyRange::from(..=12), AnyRange::from(15..)]);
+        assert_eq!(range3, range1.union(&range2));
+
         Ok(())
     }
 
@@ -892,8 +906,6 @@ mod tests {
     #[test]
     #[cfg(feature = "serde")]
     fn serde_test() {
-        serde_test!(
-            u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
-        );
+        serde_test!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
     }
 }
