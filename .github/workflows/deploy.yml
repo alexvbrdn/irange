@@ -6,14 +6,41 @@ on:
       - 'v*'
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-            toolchain: stable
-            override: true
-      - uses: katyo/publish-crates@v2
-        with:
-            registry-token: ${{ secrets.CRATES_API_TOKEN }}
+          components: rustfmt, clippy
+
+      - name: Check that the tag matches the version in Cargo.toml
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$tag" != "$manifest" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $manifest" >&2
+            exit 1
+          fi
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+      - name: Test
+        run: |
+          cargo test
+          cargo test --all-features
+
+      - name: Check documentation
+        run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      - name: Dry-run publish
+        run: cargo publish --dry-run
+
+      - name: Publish
+        run: cargo publish --token ${{ secrets.CRATES_API_TOKEN }}

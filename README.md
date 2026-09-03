@@ -1,6 +1,7 @@
 # irange
 
 [![Crates.io Version](https://img.shields.io/crates/v/irange)](https://crates.io/crates/irange)
+[![docs.rs](https://img.shields.io/docsrs/irange)](https://docs.rs/irange)
 
 A data structure to store and manipulate ranges of integers with set operations.
 
@@ -12,19 +13,20 @@ Add the following line in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-irange = "1.1"
+irange = "1.2"
 ```
 
 If you need `serde` support you can include the following feature flag:
 
 ```toml
 [dependencies]
-irange = { version = "1.1", features = ["serde"] }
+irange = { version = "1.2", features = ["serde"] }
 ```
 
 ## Examples
 
 ```rust
+use irange::range::AnyRange;
 use irange::RangeSet;
 
 let range1 = RangeSet::<i64>::new_from_ranges(&[AnyRange::from(3..=4), AnyRange::from(7..9)]);
@@ -61,7 +63,7 @@ println!();
 | `difference` | Compute the difference with the given `RangeSet`. | `O(n)` | `O(n)` |
 | `complement` | Compute the complement. | `O(n)` | `O(n)` |
 | `has_intersection` | Return `true` if there is a common value with the given `RangeSet`. | `O(n)` | `O(1)` |
-| `contains` | Return `true` if it contains the given value. | `O(n)` | `O(1)` |
+| `contains` | Return `true` if it contains the given value. | `O(log n)` | `O(1)` |
 | `contains_all` | Return `true` if it contains the given `RangeSet`. | `O(n)` | `O(1)` |
 | `is_total` | Return `true` if it contains all the possible values. | `O(1)` | `O(1)` |
 | `is_empty` | Return `true` if it does not contain any value. | `O(1)` | `O(1)` |

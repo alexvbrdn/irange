@@ -1,3 +1,75 @@
+//! A data structure to store and manipulate ranges of integers with set operations.
+//!
+//! [`RangeSet`] holds an arbitrary set of integers as a sorted collection of
+//! non-overlapping inclusive ranges. It is compact for values that come in runs — a
+//! set such as "every codepoint that is a word character" costs a handful of bounds
+//! rather than one entry per value — and it supports the usual set algebra:
+//! [`union`], [`intersection`], [`difference`], [`complement`], and the containment
+//! queries [`contains`] and [`contains_all`].
+//!
+//! Supported types: `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`, `i16`, `i32`,
+//! `i64`, `i128` and `isize`.
+//!
+//! # Example
+//!
+//! ```
+//! use irange::range::AnyRange;
+//! use irange::RangeSet;
+//!
+//! let range1 = RangeSet::<i64>::new_from_ranges(&[AnyRange::from(3..=4), AnyRange::from(7..9)]);
+//! let range2 = RangeSet::<i64>::new_from_range(-2..=4);
+//!
+//! assert_eq!("[ -2..=4 7..=8 ]", range1.union(&range2).to_string());
+//! assert_eq!("[ 3..=4 ]", range1.intersection(&range2).to_string());
+//! assert_eq!("[ 7..=8 ]", range1.difference(&range2).to_string());
+//!
+//! let values: Vec<i64> = range1.union(&range2).iter().collect();
+//! assert_eq!(vec![-2, -1, 0, 1, 2, 3, 4, 7, 8], values);
+//! ```
+//!
+//! # Representation
+//!
+//! A `RangeSet` is a flat `Vec` of inclusive bounds: the elements at an even index are
+//! lower bounds and the elements at an odd index are the matching upper bounds, so
+//! `[ 3..=4 7..=8 ]` is stored as `vec![3, 4, 7, 8]`.
+//!
+//! Every set has exactly one such representation. The bounds are even in number, no
+//! range is inverted, and consecutive ranges are sorted and separated by at least one
+//! value — two ranges that touch, like `1..=2` and `3..=4`, are merged into `1..=4`.
+//! The constructors maintain this invariant, and [`RangeSet::new_from_bounds`] checks
+//! it when you build a set from raw bounds. Writing to the public field directly
+//! bypasses the check and gives unspecified (but never panicking) results.
+//!
+//! # Complexity
+//!
+//! `n` is the total number of ranges involved. Every operation makes a single ordered
+//! pass over the bounds, so nothing here is worse than linear.
+//!
+//! | Operation | Time | Space |
+//! |---|---|---|
+//! | [`union`], [`intersection`], [`difference`], [`complement`] | `O(n)` | `O(n)` |
+//! | [`has_intersection`], [`contains_all`] | `O(n)` | `O(1)` |
+//! | [`contains`] | `O(log n)` | `O(1)` |
+//! | [`is_total`], [`is_empty`] | `O(1)` | `O(1)` |
+//!
+//! # Feature flags
+//!
+//! - `serde` — implement `Serialize` and `Deserialize` for [`RangeSet`], using the flat
+//!   list of bounds as the serialized form. Deserializing validates the invariant above
+//!   and fails with a descriptive error rather than accepting a malformed set.
+//!
+//! [`union`]: RangeSet::union
+//! [`intersection`]: RangeSet::intersection
+//! [`difference`]: RangeSet::difference
+//! [`complement`]: RangeSet::complement
+//! [`contains`]: RangeSet::contains
+//! [`contains_all`]: RangeSet::contains_all
+//! [`has_intersection`]: RangeSet::has_intersection
+//! [`is_total`]: RangeSet::is_total
+//! [`is_empty`]: RangeSet::is_empty
+
+#![warn(missing_docs)]
+
 #[cfg(feature = "serde")]
 pub use serde::{Deserialize, Serialize};
 
@@ -6,38 +78,68 @@ use std::ops::{Bound, RangeBounds};
 use integer::NumericInteger;
 use range::AnyRange;
 
+/// The integer types a [`RangeSet`] can hold.
 pub mod integer;
+/// A single range of integers, used to build a [`RangeSet`].
 pub mod range;
 
-fn range_to_bounds<T: NumericInteger, R: RangeBounds<T>>(range: &R) -> (T, T) {
+fn range_to_bounds<T: NumericInteger, R: RangeBounds<T>>(range: &R) -> Option<(T, T)> {
     let min = match range.start_bound() {
         Bound::Included(t) => *t,
-        Bound::Excluded(t) => *t + T::one(),
+        Bound::Excluded(t) => {
+            if *t == T::max_value() {
+                return None;
+            }
+            *t + T::one()
+        }
         Bound::Unbounded => T::min_value(),
     };
     let max = match range.end_bound() {
         Bound::Included(t) => *t,
-        Bound::Excluded(t) => *t - T::one(),
+        Bound::Excluded(t) => {
+            if *t == T::min_value() {
+                return None;
+            }
+            *t - T::one()
+        }
         Bound::Unbounded => T::max_value(),
     };
 
-    (min, max)
+    if min > max {
+        None
+    } else {
+        Some((min, max))
+    }
 }
 
 /// A structure holding a collection of `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`, `i16`, `i32`, `i64`, `i128` or `isize`.
 #[derive(PartialEq, Eq, Hash, Clone, Debug, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct RangeSet<T: NumericInteger>(
     /// In this collection all the elements with even index represent the lower bounds (inclusive) and all the odd index represent the upper bounds (inclusive).
     pub Vec<T>,
 );
 
+#[cfg(feature = "serde")]
+impl<'de, T: NumericInteger + Deserialize<'de>> Deserialize<'de> for RangeSet<T> {
+    fn deserialize<D>(deserializer: D) -> Result<RangeSet<T>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bounds = Vec::<T>::deserialize(deserializer)?;
+        RangeSet::new_from_bounds(bounds).ok_or_else(|| {
+            serde::de::Error::custom(
+                "invalid RangeSet: expected an even number of inclusive bounds describing sorted, non-overlapping and non-adjacent ranges",
+            )
+        })
+    }
+}
+
 impl<T: NumericInteger> std::fmt::Display for RangeSet<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "[ ")?;
-        for i in (0..self.0.len()).step_by(2) {
-            let (min, max) = (self.0[i], self.0[i + 1]);
-            write!(f, "{}..={} ", min, max)?;
+        for bounds in self.0.chunks_exact(2) {
+            write!(f, "{}..={} ", bounds[0], bounds[1])?;
         }
         write!(f, "]")
     }
@@ -59,7 +161,7 @@ impl<'a, T: NumericInteger> Iterator for RangeSetIter<'a, T> {
             self.range_set.0.get(self.index + 1),
         ) {
             if let Some(value) = self.value {
-                if value == *max {
+                if value >= *max {
                     self.index += 2;
                     if let (Some(min), Some(_)) = (
                         self.range_set.0.get(self.index),
@@ -93,14 +195,14 @@ impl<T: NumericInteger> RangeSet<T> {
     ///
     /// ```
     /// use irange::RangeSet;
-    ///  
+    ///
     /// let range = RangeSet::new_from_range(2..=5);
     ///
     /// for value in range.iter() {
     ///     print!("{value} "); // 2 3 4 5
     /// }
     /// ```
-    pub fn iter(&self) -> RangeSetIter<T> {
+    pub fn iter(&self) -> RangeSetIter<'_, T> {
         RangeSetIter {
             range_set: self,
             index: 0,
@@ -114,7 +216,7 @@ impl<T: NumericInteger> RangeSet<T> {
     ///
     /// ```
     /// use irange::RangeSet;
-    ///  
+    ///
     /// // Contains 2, 3
     /// RangeSet::new_from_range(2..4);
     ///
@@ -125,11 +227,9 @@ impl<T: NumericInteger> RangeSet<T> {
     /// RangeSet::<u32>::new_from_range(..=2);
     /// ```
     pub fn new_from_range<R: RangeBounds<T>>(range: R) -> RangeSet<T> {
-        let (min, max) = range_to_bounds(&range);
-        if max >= min {
-            RangeSet(vec![min, max])
-        } else {
-            RangeSet::empty()
+        match range_to_bounds(&range) {
+            Some((min, max)) => RangeSet(vec![min, max]),
+            None => RangeSet::empty(),
         }
     }
 
@@ -140,7 +240,7 @@ impl<T: NumericInteger> RangeSet<T> {
     /// ```
     /// use irange::RangeSet;
     /// use irange::range::AnyRange;
-    ///  
+    ///
     /// // Contains 3, 4, 7, 8
     /// RangeSet::<i64>::new_from_ranges(&[AnyRange::from(3..=4), AnyRange::from(7..9)]);
     /// ```
@@ -151,12 +251,12 @@ impl<T: NumericInteger> RangeSet<T> {
             .filter(|(min, max)| max >= min)
             .copied()
             .collect();
-        ranges.sort_by(|r1, r2| r1.0.cmp(&r2.0));
+        ranges.sort_by_key(|range| range.0);
 
         let mut bounds = Vec::with_capacity(ranges.len() * 2);
         let mut current_max = T::min_value();
         for (min, max) in ranges {
-            if bounds.is_empty() || min > current_max {
+            if bounds.is_empty() || (current_max < T::max_value() && min > current_max + T::one()) {
                 bounds.push(min);
                 bounds.push(max);
                 current_max = max;
@@ -170,13 +270,55 @@ impl<T: NumericInteger> RangeSet<T> {
         RangeSet(bounds)
     }
 
+    /// Create a new instance from the raw collection of bounds used internally: the elements with
+    /// an even index are the lower bounds (inclusive) and the elements with an odd index are the
+    /// upper bounds (inclusive).
+    ///
+    /// Return `None` if the collection is not a valid representation, i.e. if it does not hold an
+    /// even number of bounds, if a range is inverted, or if two consecutive ranges are not sorted,
+    /// overlap, or merely touch each other (they should be merged into a single range).
+    ///
+    /// # Example:
+    ///
+    /// ```
+    /// use irange::RangeSet;
+    ///
+    /// // Contains 2, 3, 4, 7, 8
+    /// assert!(RangeSet::<u8>::new_from_bounds(vec![2, 4, 7, 8]).is_some());
+    ///
+    /// // 4..=6 and 7..=8 are adjacent, they must be given as a single 4..=8 range
+    /// assert!(RangeSet::<u8>::new_from_bounds(vec![4, 6, 7, 8]).is_none());
+    /// ```
+    pub fn new_from_bounds(bounds: Vec<T>) -> Option<RangeSet<T>> {
+        if bounds.len() % 2 == 1 {
+            return None;
+        }
+
+        let mut previous_max: Option<T> = None;
+        for range in bounds.chunks_exact(2) {
+            let (min, max) = (range[0], range[1]);
+            if min > max {
+                return None;
+            }
+            if let Some(previous_max) = previous_max {
+                // The ranges must be sorted and separated by at least one value.
+                if previous_max >= T::max_value() || min <= previous_max + T::one() {
+                    return None;
+                }
+            }
+            previous_max = Some(max);
+        }
+
+        Some(RangeSet(bounds))
+    }
+
     /// Create a new instance that does not contain any value.
     ///
     /// # Example:
     ///
     /// ```
     /// use irange::RangeSet;
-    ///  
+    ///
     /// // Contains nothing
     /// RangeSet::<i32>::empty();
     /// ```
@@ -191,7 +333,7 @@ impl<T: NumericInteger> RangeSet<T> {
     ///
     /// ```
     /// use irange::RangeSet;
-    ///  
+    ///
     /// // Contains all values that can be stored into a u8
     /// // -> 0..=255
     /// RangeSet::<u8>::total();
@@ -211,7 +353,7 @@ impl<T: NumericInteger> RangeSet<T> {
     ///
     /// ```
     /// use irange::RangeSet;
-    ///  
+    ///
     /// let total = RangeSet::<u128>::total();
     /// assert!(total.is_total());
     ///
@@ -220,7 +362,7 @@ impl<T: NumericInteger> RangeSet<T> {
     /// ```
     #[inline]
     pub fn is_total(&self) -> bool {
-        !self.0.is_empty() && self.0[0] == T::min_value() && self.0[1] >= T::max_value()
+        self.0.len() >= 2 && self.0[0] == T::min_value() && self.0[1] >= T::max_value()
     }
 
     /// Return `true` if it does not contain any value.
@@ -229,7 +371,7 @@ impl<T: NumericInteger> RangeSet<T> {
     ///
     /// ```
     /// use irange::RangeSet;
-    ///  
+    ///
     /// let empty = RangeSet::<u128>::empty();
     /// assert!(empty.is_empty());
     ///
@@ -294,8 +436,8 @@ impl<T: NumericInteger> RangeSet<T> {
         let mut self_i = 0;
         let mut that_i = 0;
 
-        while that_i < that.0.len() {
-            if self_i == self.0.len() {
+        while that_i + 1 < that.0.len() {
+            if self_i + 1 >= self.0.len() {
                 return false;
             } else {
                 let self_min = self.0[self_i];
@@ -345,8 +487,9 @@ impl<T: NumericInteger> RangeSet<T> {
         let mut current_max = T::min_value();
         let mut current_i = None;
 
-        while self_i < self.0.len() || that_i < that.0.len() {
-            if that_i < that.0.len() && (self_i >= self.0.len() || self.0[self_i] > that.0[that_i])
+        while self_i + 1 < self.0.len() || that_i + 1 < that.0.len() {
+            if that_i + 1 < that.0.len()
+                && (self_i + 1 >= self.0.len() || self.0[self_i] > that.0[that_i])
             {
                 let (that_min, that_max) = (that.0[that_i], that.0[that_i + 1]);
 
@@ -407,7 +550,7 @@ impl<T: NumericInteger> RangeSet<T> {
         let mut i = 0;
         let mut j = 0;
 
-        while i < self.0.len() && j < that.0.len() {
+        while i + 1 < self.0.len() && j + 1 < that.0.len() {
             let self_min = self.0[i];
             let self_max = self.0[i + 1];
             let that_min = that.0[j];
@@ -452,7 +595,7 @@ impl<T: NumericInteger> RangeSet<T> {
         let mut i = 0;
         let mut j = 0;
 
-        while i < self.0.len() && j < that.0.len() {
+        while i + 1 < self.0.len() && j + 1 < that.0.len() {
             let self_min = self.0[i];
             let self_max = self.0[i + 1];
             let that_min = that.0[j];
@@ -499,8 +642,8 @@ impl<T: NumericInteger> RangeSet<T> {
 
         let mut new_range = Vec::with_capacity(self.0.len() + 2);
 
-        for i in (0..self.0.len()).step_by(2) {
-            let (min, max) = (self.0[i], self.0[i + 1]);
+        for bounds in self.0.chunks_exact(2) {
+            let (min, max) = (bounds[0], bounds[1]);
 
             if new_range.is_empty() && min != T::min_value() {
                 new_range.push(T::min_value());
@@ -508,7 +651,11 @@ impl<T: NumericInteger> RangeSet<T> {
             }
 
             if new_range.len() % 2 == 1 {
-                new_range.push(min - T::one());
+                if min == T::min_value() {
+                    new_range.pop();
+                } else {
+                    new_range.push(min - T::one());
+                }
             }
             if max < T::max_value() {
                 new_range.push(max + T::one());
@@ -543,7 +690,7 @@ impl<T: NumericInteger> RangeSet<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{BTreeSet, HashSet};
 
     use super::*;
 
@@ -601,6 +748,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::reversed_empty_ranges)] // reversed ranges are used on purpose here
     fn test_new_from_ranges() -> Result<(), String> {
         assert_eq!(
             RangeSet(vec![3, 5, 9, 14]),
@@ -907,5 +1055,350 @@ mod tests {
     #[cfg(feature = "serde")]
     fn serde_test() {
         serde_test!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+    }
+
+    /// A lower bound excluded from the range and equal to the maximum value: the range is empty.
+    struct ExcludedMaxStart;
+    impl RangeBounds<u8> for ExcludedMaxStart {
+        fn start_bound(&self) -> Bound<&u8> {
+            Bound::Excluded(&u8::MAX)
+        }
+        fn end_bound(&self) -> Bound<&u8> {
+            Bound::Unbounded
+        }
+    }
+
+    /// A range with both bounds excluded, e.g. `(3, 7)` -> `4..=6`.
+    struct ExcludedBothEnds(u8, u8);
+    impl RangeBounds<u8> for ExcludedBothEnds {
+        fn start_bound(&self) -> Bound<&u8> {
+            Bound::Excluded(&self.0)
+        }
+        fn end_bound(&self) -> Bound<&u8> {
+            Bound::Excluded(&self.1)
+        }
+    }
+
+    fn range_set_from_values(values: &[u8]) -> RangeSet<u8> {
+        RangeSet::new_from_ranges(
+            &values
+                .iter()
+                .map(|&value| AnyRange::from(value..=value))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Assert the internal representation is canonical: an even number of bounds, no inverted
+    /// range and no two ranges that overlap or merely touch each other.
+    fn assert_canonical(range: &RangeSet<u8>) {
+        assert_eq!(
+            0,
+            range.0.len() % 2,
+            "odd number of bounds in {:?}",
+            range.0
+        );
+        for bounds in range.0.chunks(2) {
+            assert!(
+                bounds[0] <= bounds[1],
+                "inverted range {}..={} in {:?}",
+                bounds[0],
+                bounds[1],
+                range.0
+            );
+        }
+        for pair in range.0.chunks(2).collect::<Vec<_>>().windows(2) {
+            assert!(
+                u16::from(pair[1][0]) > u16::from(pair[0][1]) + 1,
+                "ranges {}..={} and {}..={} should have been merged in {:?}",
+                pair[0][0],
+                pair[0][1],
+                pair[1][0],
+                pair[1][1],
+                range.0
+            );
+        }
+    }
+
+    #[test]
+    fn test_new_from_ranges_merges_adjacent_ranges() -> Result<(), String> {
+        assert_eq!(
+            RangeSet::<u8>::new_from_range(1..=4),
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(1..=2), AnyRange::from(3..=4)])
+        );
+
+        assert_eq!(
+            vec![1, 4],
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(3..=4), AnyRange::from(1..=2)]).0
+        );
+
+        // A chain of ranges that only touch each other collapses into a single one.
+        assert_eq!(
+            vec![0, 9],
+            RangeSet::<u8>::new_from_ranges(&[
+                AnyRange::from(0..=2),
+                AnyRange::from(3..=3),
+                AnyRange::from(4..8),
+                AnyRange::from(8..=9)
+            ])
+            .0
+        );
+
+        // A range contained in the current one must not shrink it.
+        assert_eq!(
+            vec![0, 9],
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(0..=9), AnyRange::from(3..=4)]).0
+        );
+
+        // A one value gap is preserved.
+        assert_eq!(
+            vec![0, 2, 4, 9],
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(0..=2), AnyRange::from(4..=9)]).0
+        );
+
+        // Merging up to the maximum value must not overflow.
+        assert_eq!(
+            vec![250, 255],
+            RangeSet::<u8>::new_from_ranges(&[
+                AnyRange::from(250..=254),
+                AnyRange::from(255..=255)
+            ])
+            .0
+        );
+        assert!(
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(..), AnyRange::from(200..=255)])
+                .is_total()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_complement_and_difference_with_adjacent_ranges() -> Result<(), String> {
+        let range =
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(1..=2), AnyRange::from(3..=4)]);
+        assert_canonical(&range);
+
+        let complement = range.complement();
+        assert_canonical(&complement);
+        assert_eq!(vec![0, 0, 5, 255], complement.0);
+
+        let range1 = RangeSet::<u8>::new_from_range(9..=12);
+        let range2 =
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(11..=11), AnyRange::from(12..=17)]);
+        let difference = range1.difference(&range2);
+        assert_canonical(&difference);
+        assert_eq!(vec![9, 10], difference.0);
+
+        let range =
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(3..=6), AnyRange::from(7..=11)]);
+        assert!(range.contains_all(&RangeSet::new_from_range(3..=8)));
+        assert!(range.contains_all(&RangeSet::new_from_range(3..=11)));
+        assert!(!range.contains_all(&RangeSet::new_from_range(3..=12)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_new_from_empty_range() -> Result<(), String> {
+        assert!(RangeSet::<u8>::new_from_range(5..5).is_empty());
+        assert!(RangeSet::<u8>::new_from_range(0..0).is_empty());
+        assert!(RangeSet::<u8>::new_from_range(..0).is_empty());
+        assert!(RangeSet::<u8>::new_from_range(ExcludedMaxStart).is_empty());
+        assert!(RangeSet::<i32>::new_from_range(i32::MIN..i32::MIN).is_empty());
+        assert!(RangeSet::<i8>::new_from_range(..i8::MIN).is_empty());
+        assert!(RangeSet::<usize>::new_from_range(0..0).is_empty());
+
+        // An empty range must not be turned into the total range.
+        assert!(!RangeSet::<u8>::new_from_range(0..0).is_total());
+        assert!(!RangeSet::<i32>::new_from_range(i32::MIN..i32::MIN).is_total());
+
+        // An empty range is simply ignored when building from several ranges.
+        assert!(RangeSet::<u8>::new_from_ranges(&[AnyRange::from(0..0)]).is_empty());
+        assert_eq!(
+            RangeSet::<u8>::new_from_range(7..=9),
+            RangeSet::<u8>::new_from_ranges(&[AnyRange::from(0..0), AnyRange::from(7..=9)])
+        );
+
+        // Excluded bounds that are not degenerate keep working.
+        assert_eq!(
+            vec![4, 6],
+            RangeSet::<u8>::new_from_range(ExcludedBothEnds(3, 7)).0
+        );
+        assert_eq!(vec![0, 254], RangeSet::<u8>::new_from_range(..u8::MAX).0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_malformed_range_set_does_not_panic() -> Result<(), String> {
+        // A `RangeSet` can be built directly from its public field, so no operation may panic
+        // on a malformed representation.
+        for bounds in [vec![0u8], vec![1, 5, 9], vec![5, 3], vec![10, 20, 0, 5]] {
+            let malformed = RangeSet::<u8>(bounds);
+            let _ = malformed.is_total();
+            let _ = malformed.is_empty();
+            let _ = format!("{malformed}");
+            let _ = malformed.contains(4);
+            let _ = malformed.iter().take(512).count();
+            let _ = malformed.complement();
+            let _ = malformed.union(&RangeSet(vec![1, 2]));
+            let _ = malformed.intersection(&RangeSet(vec![1, 2]));
+            let _ = malformed.difference(&RangeSet(vec![1, 2]));
+            let _ = malformed.has_intersection(&RangeSet(vec![1, 2]));
+            let _ = malformed.contains_all(&RangeSet(vec![1, 2]));
+            let _ = RangeSet(vec![1u8, 2]).contains_all(&malformed);
+            let _ = RangeSet(vec![1u8, 2]).union(&malformed);
+            let _ = RangeSet(vec![1u8, 2]).intersection(&malformed);
+            let _ = RangeSet(vec![1u8, 2]).has_intersection(&malformed);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_exhaustive_against_btree_set() -> Result<(), String> {
+        const UNIVERSE: u8 = 7;
+
+        let subsets: Vec<(BTreeSet<u8>, RangeSet<u8>)> = (0..(1u32 << UNIVERSE))
+            .map(|mask| {
+                let values: Vec<u8> = (0..UNIVERSE)
+                    .filter(|value| mask & (1 << value) != 0)
+                    .collect();
+                (
+                    values.iter().copied().collect(),
+                    range_set_from_values(&values),
+                )
+            })
+            .collect();
+
+        for (values, range) in &subsets {
+            assert_canonical(range);
+            assert_eq!(*values, range.iter().collect::<BTreeSet<_>>());
+            assert_eq!(values.is_empty(), range.is_empty());
+
+            let complement = range.complement();
+            assert_canonical(&complement);
+            assert_eq!(
+                (0..=u8::MAX)
+                    .filter(|v| !values.contains(v))
+                    .collect::<BTreeSet<_>>(),
+                complement.iter().collect::<BTreeSet<_>>()
+            );
+
+            for value in 0..=UNIVERSE {
+                assert_eq!(values.contains(&value), range.contains(value));
+            }
+        }
+
+        for (values1, range1) in &subsets {
+            for (values2, range2) in &subsets {
+                let union = range1.union(range2);
+                assert_canonical(&union);
+                assert_eq!(
+                    values1.union(values2).copied().collect::<BTreeSet<_>>(),
+                    union.iter().collect::<BTreeSet<_>>(),
+                    "{range1} union {range2}"
+                );
+
+                let intersection = range1.intersection(range2);
+                assert_canonical(&intersection);
+                assert_eq!(
+                    values1
+                        .intersection(values2)
+                        .copied()
+                        .collect::<BTreeSet<_>>(),
+                    intersection.iter().collect::<BTreeSet<_>>(),
+                    "{range1} intersection {range2}"
+                );
+
+                let difference = range1.difference(range2);
+                assert_canonical(&difference);
+                assert_eq!(
+                    values1
+                        .difference(values2)
+                        .copied()
+                        .collect::<BTreeSet<_>>(),
+                    difference.iter().collect::<BTreeSet<_>>(),
+                    "{range1} difference {range2}"
+                );
+
+                assert_eq!(
+                    !values1.is_disjoint(values2),
+                    range1.has_intersection(range2),
+                    "{range1} has_intersection {range2}"
+                );
+                assert_eq!(
+                    values2.is_subset(values1),
+                    range1.contains_all(range2),
+                    "{range1} contains_all {range2}"
+                );
+
+                // Equal sets must have equal representations, otherwise `Eq` and `Hash` lie.
+                if values1 == values2 {
+                    assert_eq!(range1, range2);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_new_from_bounds_validation() -> Result<(), String> {
+        assert_eq!(
+            Some(RangeSet::<u8>::empty()),
+            RangeSet::<u8>::new_from_bounds(vec![])
+        );
+        assert_eq!(
+            Some(RangeSet::<u8>::new_from_range(2..=5)),
+            RangeSet::<u8>::new_from_bounds(vec![2, 5])
+        );
+        assert_eq!(
+            Some(RangeSet::<u8>::total()),
+            RangeSet::<u8>::new_from_bounds(vec![0, 255])
+        );
+        assert_eq!(
+            Some(RangeSet::<u8>(vec![2, 5, 7, 9])),
+            RangeSet::<u8>::new_from_bounds(vec![2, 5, 7, 9])
+        );
+
+        // Odd number of bounds.
+        assert_eq!(None, RangeSet::<u8>::new_from_bounds(vec![0]));
+        assert_eq!(None, RangeSet::<u8>::new_from_bounds(vec![0, 5, 7]));
+        // Inverted range.
+        assert_eq!(None, RangeSet::<u8>::new_from_bounds(vec![5, 3]));
+        // Unsorted ranges.
+        assert_eq!(None, RangeSet::<u8>::new_from_bounds(vec![10, 20, 0, 5]));
+        // Overlapping ranges.
+        assert_eq!(None, RangeSet::<u8>::new_from_bounds(vec![0, 5, 4, 9]));
+        // Adjacent ranges, they should have been merged.
+        assert_eq!(None, RangeSet::<u8>::new_from_bounds(vec![0, 5, 6, 9]));
+        // A range starting after the maximum value cannot exist.
+        assert_eq!(
+            None,
+            RangeSet::<u8>::new_from_bounds(vec![0, 255, 255, 255])
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn serde_rejects_malformed_range_set() {
+        assert!(serde_json::from_str::<RangeSet<u8>>("[]").is_ok());
+        assert!(serde_json::from_str::<RangeSet<u8>>("[0,5]").is_ok());
+        assert!(serde_json::from_str::<RangeSet<u8>>("[0,5,7,9]").is_ok());
+
+        // Odd number of bounds.
+        assert!(serde_json::from_str::<RangeSet<u8>>("[0]").is_err());
+        assert!(serde_json::from_str::<RangeSet<u8>>("[0,5,7]").is_err());
+        // Inverted range.
+        assert!(serde_json::from_str::<RangeSet<u8>>("[5,3]").is_err());
+        // Unsorted ranges.
+        assert!(serde_json::from_str::<RangeSet<u8>>("[10,20,0,5]").is_err());
+        // Overlapping ranges.
+        assert!(serde_json::from_str::<RangeSet<u8>>("[0,5,4,9]").is_err());
+        // Adjacent ranges that should have been merged.
+        assert!(serde_json::from_str::<RangeSet<u8>>("[0,5,6,9]").is_err());
     }
 }

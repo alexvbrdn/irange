@@ -3,6 +3,11 @@ use std::{
     ops::{Add, AddAssign, Sub},
 };
 
+/// The integer types a [`RangeSet`](crate::RangeSet) can hold.
+///
+/// This trait is blanket-implemented for every type meeting its bounds, so it is
+/// implemented for `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`, `i16`, `i32`,
+/// `i64`, `i128` and `isize`, and there is nothing to implement by hand.
 pub trait NumericInteger:
     Display + Copy + Ord + Add<Output = Self> + Sub<Output = Self> + AddAssign + Bounded
 {
@@ -13,9 +18,17 @@ impl<T> NumericInteger for T where
 {
 }
 
+/// The constants a [`NumericInteger`] needs: its range and its unit step.
+///
+/// It is implemented for every supported integer type. `RangeSet` uses it to walk
+/// between adjacent values and to describe the total set, so an implementation must
+/// report the true bounds of the type.
 pub trait Bounded {
+    /// The smallest value the type can hold.
     fn min_value() -> Self;
+    /// The largest value the type can hold.
     fn max_value() -> Self;
+    /// The value `1`, i.e. the distance between two adjacent values.
     fn one() -> Self;
 }
 

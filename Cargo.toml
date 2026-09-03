@@ -1,6 +1,6 @@
 [package]
 name = "irange"
-version = "1.1.2"
+version = "1.2.0"
 edition = "2021"
 authors = ["Alexandre van Beurden"]
 repository = "https://github.com/alexvbrdn/irange"
@@ -8,6 +8,7 @@ license = "MIT"
 keywords = ["range", "intersection", "union", "difference", "complement"]
 description = "A data structure to store and manipulate ranges of integers with set operations"
 readme = "README.md"
+exclude = [".github", ".gitignore"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"], optional = true }
