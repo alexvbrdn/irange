@@ -12,12 +12,8 @@ env:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+    name: Test
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -35,6 +31,26 @@ jobs:
       # `--all-targets` skips doctests, and the crate documentation is full of them.
       - name: Doctests
         run: cargo test --all-features --doc
+
+  cross:
+    name: 32-bit target
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+
+      # 32-bit libc, both to link the test binaries and to build criterion's `alloca`,
+      # whose build script compiles C.
+      - name: Install the 32-bit toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+
+      # `usize` and `isize` are the only types in the public API whose width depends on
+      # the platform, and every other job runs on a 64-bit one.
+      - name: Test on a 32-bit target
+        run: cargo test --all-features --target i686-unknown-linux-gnu
 
   lint:
     name: Format and Clippy

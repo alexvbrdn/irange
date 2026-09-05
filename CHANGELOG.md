@@ -49,7 +49,7 @@ This release fixes three bugs that made `RangeSet` return wrong values rather th
 - `contains` is documented as `O(log n)` in the README; it was listed as `O(n)` but has been a binary search since 1.1.0.
 - The crate is now `#![forbid(unsafe_code)]`. It never contained any `unsafe`; this makes that checkable.
 - `Cargo.toml` declares `categories`, `homepage` and `documentation`, and switches from `exclude` to an `include` allowlist so a new file at the root cannot end up in the published package by accident. The `keywords` are now `range`, `interval`, `set`, `intersection` and `union`; `difference` and `complement` were dropped as nobody searches for them.
-- CI now checks formatting, runs clippy with `-D warnings`, tests on Linux, Windows and macOS, tests each feature combination, builds the documentation with `-D warnings`, dry-runs the publish, and verifies the declared 1.63 MSRV. Previously none of these were enforced outside the release workflow.
+- CI now checks formatting, runs clippy with `-D warnings`, tests each feature combination, tests a 32-bit target, builds the documentation with `-D warnings`, dry-runs the publish, and verifies the declared 1.63 MSRV. Previously none of these were enforced outside the release workflow.
 - `Cargo.lock` is no longer tracked. The crate is a library, so dependents pick their own versions, and the current lockfile format cannot be read by the 1.63 Cargo the MSRV names.
 - The benchmark file is renamed from `benches/my_benchmark.rs` to `benches/set_ops.rs`.
 
