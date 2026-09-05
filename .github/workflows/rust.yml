@@ -8,18 +8,86 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
 
 jobs:
-  build:
-
-    runs-on: ubuntu-latest
-
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Test & Lint
-      run: |
-        cargo test
-        cargo test  --features serde
-        cargo clippy
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test with default features
+        run: cargo test --all-targets
+
+      - name: Test with no default features
+        run: cargo test --no-default-features --all-targets
+
+      - name: Test with all features
+        run: cargo test --all-features --all-targets
+
+      # `--all-targets` skips doctests, and the crate documentation is full of them.
+      - name: Doctests
+        run: cargo test --all-features --doc
+
+  lint:
+    name: Format and Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+
+      # Nightly with `--cfg docsrs`, to match how docs.rs builds the crate.
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings
+
+  msrv:
+    name: Minimum supported Rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.63
+      - uses: taiki-e/install-action@cargo-hack
+      - uses: Swatinem/rust-cache@v2
+
+      # The dev-dependencies need a far newer compiler than the crate itself, so they
+      # are stripped out. The `serde` feature is excluded for the same reason: it pulls
+      # in `serde_derive`, whose own dependencies raise the requirement past 1.63.
+      - name: Check against the declared MSRV
+        run: cargo hack check --no-dev-deps --no-default-features
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Dry-run publish
+        run: cargo publish --dry-run

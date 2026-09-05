@@ -5,6 +5,7 @@ use crate::{integer::NumericInteger, range_to_bounds};
 /// A range of integers, held as an inclusive `(min, max)` pair.
 ///
 /// A range where `min > max` is empty and is ignored by `RangeSet::new_from_ranges`.
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, PartialOrd, Ord)]
 pub struct AnyRange<T: NumericInteger>((T, T));
 
 impl<T: NumericInteger> AnyRange<T> {

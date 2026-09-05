@@ -52,6 +52,42 @@
 //! | [`contains`] | `O(log n)` | `O(1)` |
 //! | [`is_total`], [`is_empty`] | `O(1)` | `O(1)` |
 //!
+//! # Operators
+//!
+//! The four operations that build a new set also have an operator, taking references like
+//! those of [`BTreeSet`](std::collections::BTreeSet): `|` for [`union`], `&` for
+//! [`intersection`], `-` for [`difference`] and `!` for [`complement`].
+//!
+//! ```
+//! use irange::RangeSet;
+//!
+//! let a = RangeSet::new_from_range(3..=8);
+//! let b = RangeSet::new_from_range(7..=12);
+//!
+//! assert_eq!(a.union(&b), &a | &b);
+//! assert_eq!(a.intersection(&b), &a & &b);
+//! assert_eq!(a.difference(&b), &a - &b);
+//! assert_eq!(a.complement(), !&a);
+//! ```
+//!
+//! # Iteration
+//!
+//! [`RangeSet::iter`] walks the individual values in order, and `&RangeSet` implements
+//! [`IntoIterator`], so a `for` loop over a set works directly. The iterator is
+//! double-ended, so [`rev`](Iterator::rev) walks the values from the largest down.
+//!
+//! ```
+//! use irange::RangeSet;
+//!
+//! let range = RangeSet::new_from_range(2..=5);
+//!
+//! let ascending: Vec<i32> = (&range).into_iter().collect();
+//! assert_eq!(vec![2, 3, 4, 5], ascending);
+//!
+//! let descending: Vec<i32> = range.iter().rev().collect();
+//! assert_eq!(vec![5, 4, 3, 2], descending);
+//! ```
+//!
 //! # Feature flags
 //!
 //! - `serde` — implement `Serialize` and `Deserialize` for [`RangeSet`], using the flat
@@ -69,9 +105,11 @@
 //! [`is_empty`]: RangeSet::is_empty
 
 #![warn(missing_docs)]
+#![forbid(unsafe_code)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "serde")]
-pub use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use std::ops::{Bound, RangeBounds};
 
@@ -121,6 +159,7 @@ pub struct RangeSet<T: NumericInteger>(
 );
 
 #[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 impl<'de, T: NumericInteger + Deserialize<'de>> Deserialize<'de> for RangeSet<T> {
     fn deserialize<D>(deserializer: D) -> Result<RangeSet<T>, D::Error>
     where
@@ -146,47 +185,97 @@ impl<T: NumericInteger> std::fmt::Display for RangeSet<T> {
 }
 
 /// A structure to hold the iterator of a `RangeSet` instance.
+///
+/// It walks the values in order, and backwards from the end with
+/// [`rev`](Iterator::rev) or [`next_back`](DoubleEndedIterator::next_back).
+#[derive(Clone, Debug)]
 pub struct RangeSetIter<'a, T: NumericInteger> {
-    range_set: &'a RangeSet<T>,
-    index: usize,
-    value: Option<T>,
+    bounds: &'a [T],
+    /// Index of the lower bound of the next range to load from the front.
+    front: usize,
+    /// Index one past the upper bound of the next range to load from the back.
+    /// The ranges that neither end has loaded yet are `bounds[front..back]`.
+    back: usize,
+    /// Values left to yield of the range the front end is walking, as inclusive bounds.
+    current: Option<(T, T)>,
+    /// Values left to yield of the range the back end is walking, as inclusive bounds.
+    current_back: Option<(T, T)>,
 }
 
-impl<'a, T: NumericInteger> Iterator for RangeSetIter<'a, T> {
+impl<T: NumericInteger> Iterator for RangeSetIter<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let (Some(min), Some(max)) = (
-            self.range_set.0.get(self.index),
-            self.range_set.0.get(self.index + 1),
-        ) {
-            if let Some(value) = self.value {
-                if value >= *max {
-                    self.index += 2;
-                    if let (Some(min), Some(_)) = (
-                        self.range_set.0.get(self.index),
-                        self.range_set.0.get(self.index + 1),
-                    ) {
-                        self.value = Some(*min);
-                        Some(*min)
-                    } else {
-                        None
-                    }
-                } else {
-                    let next = value + T::one();
-                    self.value = Some(next);
-
-                    self.value
-                }
+        // Walk the range the front end already loaded.
+        if let Some((min, max)) = self.current {
+            self.current = if min < max {
+                Some((min + T::one(), max))
             } else {
-                self.value = Some(*min);
-                self.value
+                None
+            };
+            return Some(min);
+        }
+
+        // Load the next range that neither end has claimed. An inverted range, only
+        // reachable from a hand-written `RangeSet`, yields its lower bound alone.
+        if self.front < self.back {
+            let (min, max) = (self.bounds[self.front], self.bounds[self.front + 1]);
+            self.front += 2;
+            if min < max {
+                self.current = Some((min + T::one(), max));
             }
+            return Some(min);
+        }
+
+        // The ends have met: finish off what the back end started.
+        let (min, max) = self.current_back?;
+        self.current_back = if min < max {
+            Some((min + T::one(), max))
         } else {
             None
-        }
+        };
+        Some(min)
     }
 }
+
+impl<T: NumericInteger> DoubleEndedIterator for RangeSetIter<'_, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        // Walk the range the back end already loaded.
+        if let Some((min, max)) = self.current_back {
+            self.current_back = if min < max {
+                Some((min, max - T::one()))
+            } else {
+                None
+            };
+            return Some(max);
+        }
+
+        // Load the last range that neither end has claimed.
+        if self.front < self.back {
+            let (min, max) = (self.bounds[self.back - 2], self.bounds[self.back - 1]);
+            self.back -= 2;
+            // An inverted range yields its lower bound alone, from either end.
+            if min > max {
+                return Some(min);
+            }
+            if min < max {
+                self.current_back = Some((min, max - T::one()));
+            }
+            return Some(max);
+        }
+
+        // The ends have met: finish off what the front end started.
+        let (min, max) = self.current?;
+        self.current = if min < max {
+            Some((min, max - T::one()))
+        } else {
+            None
+        };
+        Some(max)
+    }
+}
+
+impl<T: NumericInteger> std::iter::FusedIterator for RangeSetIter<'_, T> {}
 
 impl<T: NumericInteger> RangeSet<T> {
     /// Return an iterator to iterate in order over all the values contained.
@@ -203,10 +292,15 @@ impl<T: NumericInteger> RangeSet<T> {
     /// }
     /// ```
     pub fn iter(&self) -> RangeSetIter<'_, T> {
+        // An odd trailing bound, only reachable from a hand-written `RangeSet`, has no
+        // matching upper bound and is ignored.
+        let len = self.0.len();
         RangeSetIter {
-            range_set: self,
-            index: 0,
-            value: None,
+            bounds: &self.0,
+            front: 0,
+            back: len - len % 2,
+            current: None,
+            current_back: None,
         }
     }
 
@@ -251,14 +345,27 @@ impl<T: NumericInteger> RangeSet<T> {
             .filter(|(min, max)| max >= min)
             .copied()
             .collect();
-        ranges.sort_by_key(|range| range.0);
+        // Ranges that already arrive in order, a common way to build a set, need no sort.
+        let mut is_sorted = true;
+        if let Some((first_min, _)) = ranges.first() {
+            let mut previous_min = *first_min;
+            for (min, _) in &ranges[1..] {
+                if *min < previous_min {
+                    is_sorted = false;
+                    break;
+                }
+                previous_min = *min;
+            }
+        }
+        if !is_sorted {
+            ranges.sort_by_key(|range| range.0);
+        }
 
         let mut bounds = Vec::with_capacity(ranges.len() * 2);
         let mut current_max = T::min_value();
         for (min, max) in ranges {
             if bounds.is_empty() || (current_max < T::max_value() && min > current_max + T::one()) {
-                bounds.push(min);
-                bounds.push(max);
+                bounds.extend_from_slice(&[min, max]);
                 current_max = max;
             } else if max > current_max {
                 *bounds.last_mut().unwrap() = max;
@@ -433,26 +540,26 @@ impl<T: NumericInteger> RangeSet<T> {
             return false;
         }
 
+        // Neither end of `that` can stick out of the span of `self`.
+        if that.0[0] < self.0[0] || that.0[that.0.len() - 1] > self.0[self.0.len() - 1] {
+            return false;
+        }
+
         let mut self_i = 0;
-        let mut that_i = 0;
 
-        while that_i + 1 < that.0.len() {
-            if self_i + 1 >= self.0.len() {
+        for bounds in that.0.chunks_exact(2) {
+            let (that_min, that_max) = (bounds[0], bounds[1]);
+
+            // Skip the ranges of `self` that end before this one starts.
+            while self_i + 1 < self.0.len() && self.0[self_i + 1] < that_min {
+                self_i += 2;
+            }
+
+            if self_i + 1 >= self.0.len()
+                || self.0[self_i] > that_min
+                || self.0[self_i + 1] < that_max
+            {
                 return false;
-            } else {
-                let self_min = self.0[self_i];
-                let self_max = self.0[self_i + 1];
-
-                let that_min = that.0[that_i];
-                let that_max = that.0[that_i + 1];
-
-                if self_min <= that_min && self_max >= that_max {
-                    that_i += 2;
-                } else if self_max > that_min {
-                    return false;
-                } else {
-                    self_i += 2;
-                }
             }
         }
         true
@@ -483,48 +590,42 @@ impl<T: NumericInteger> RangeSet<T> {
         let mut self_i = 0;
         let mut that_i = 0;
 
-        let mut current_min = T::min_value();
-        let mut current_max = T::min_value();
-        let mut current_i = None;
+        // The range being built. It is written out once a range that does not touch it is
+        // found, since until then its upper bound can still grow.
+        let mut current: Option<(T, T)> = None;
 
         while self_i + 1 < self.0.len() || that_i + 1 < that.0.len() {
-            if that_i + 1 < that.0.len()
+            // Take whichever side starts first, so the ranges are seen in order.
+            let (min, max) = if that_i + 1 < that.0.len()
                 && (self_i + 1 >= self.0.len() || self.0[self_i] > that.0[that_i])
             {
-                let (that_min, that_max) = (that.0[that_i], that.0[that_i + 1]);
-
-                if let Some(ci) = current_i {
-                    if that_min <= current_max + T::one() && that_max >= current_max {
-                        new_range[ci + 1] = that_max;
-                    } else if that_min < current_min || that_max > current_max {
-                        new_range.extend_from_slice(&[that_min, that_max]);
-                    }
-                } else {
-                    new_range.extend_from_slice(&[that_min, that_max]);
-                }
-
                 that_i += 2;
+                (that.0[that_i - 2], that.0[that_i - 1])
             } else {
-                let (self_min, self_max) = (self.0[self_i], self.0[self_i + 1]);
-
-                if let Some(ci) = current_i {
-                    if self_min <= current_max + T::one() && self_max >= current_max {
-                        new_range[ci + 1] = self_max;
-                    } else if self_min < current_min || self_max > current_max {
-                        new_range.extend_from_slice(&[self_min, self_max]);
-                    }
-                } else {
-                    new_range.extend_from_slice(&[self_min, self_max]);
-                }
-
                 self_i += 2;
+                (self.0[self_i - 2], self.0[self_i - 1])
+            };
+
+            match current {
+                // The range overlaps the current one or is adjacent to it: merge them.
+                Some((current_min, current_max))
+                    if min <= current_max
+                        || (current_max < T::max_value() && min <= current_max + T::one()) =>
+                {
+                    if max > current_max {
+                        current = Some((current_min, max));
+                    }
+                }
+                Some((current_min, current_max)) => {
+                    new_range.extend_from_slice(&[current_min, current_max]);
+                    current = Some((min, max));
+                }
+                None => current = Some((min, max)),
             }
-            current_min = new_range[new_range.len() - 2];
-            current_max = new_range[new_range.len() - 1];
-            if current_max == T::max_value() {
-                break;
-            }
-            current_i = Some(new_range.len() - 2);
+        }
+
+        if let Some((current_min, current_max)) = current {
+            new_range.extend_from_slice(&[current_min, current_max]);
         }
 
         new_range.shrink_to_fit();
@@ -642,27 +743,36 @@ impl<T: NumericInteger> RangeSet<T> {
 
         let mut new_range = Vec::with_capacity(self.0.len() + 2);
 
-        for bounds in self.0.chunks_exact(2) {
-            let (min, max) = (bounds[0], bounds[1]);
+        // The complement is made of the gaps between the ranges: everything below the first
+        // lower bound, the space between every upper bound and the next lower bound, and
+        // everything above the last upper bound.
+        let first = self.0[0];
+        if first > T::min_value() {
+            new_range.extend_from_slice(&[T::min_value(), first - T::one()]);
+        }
 
-            if new_range.is_empty() && min != T::min_value() {
-                new_range.push(T::min_value());
-                new_range.push(min - T::one());
-            }
-
-            if new_range.len() % 2 == 1 {
-                if min == T::min_value() {
-                    new_range.pop();
-                } else {
-                    new_range.push(min - T::one());
+        // Every `[upper bound, next lower bound]` pair, i.e. the bounds minus the first and
+        // the last one, describes exactly one gap.
+        let inner = if self.0.len() > 2 {
+            &self.0[1..self.0.len() - 1]
+        } else {
+            &[][..]
+        };
+        for gap in inner.chunks_exact(2) {
+            let (previous_max, next_min) = (gap[0], gap[1]);
+            // Always true for a canonical `RangeSet`; the checks only keep a hand-written one
+            // from overflowing.
+            if previous_max < T::max_value() && next_min > T::min_value() {
+                let (min, max) = (previous_max + T::one(), next_min - T::one());
+                if min <= max {
+                    new_range.extend_from_slice(&[min, max]);
                 }
             }
-            if max < T::max_value() {
-                new_range.push(max + T::one());
-            }
         }
-        if new_range.len() % 2 == 1 {
-            new_range.push(T::max_value());
+
+        let last = self.0[self.0.len() - 1];
+        if last < T::max_value() {
+            new_range.extend_from_slice(&[last + T::one(), T::max_value()]);
         }
 
         new_range.shrink_to_fit();
@@ -682,9 +792,188 @@ impl<T: NumericInteger> RangeSet<T> {
     /// // Contains 2
     /// let difference = range1.difference(&range2);
     /// ```
-    #[inline]
     pub fn difference(&self, that: &RangeSet<T>) -> RangeSet<T> {
-        self.intersection(&that.complement())
+        if self.is_empty() || that.is_empty() {
+            return self.clone();
+        } else if that.is_total() {
+            return RangeSet::empty();
+        } else if self.is_total() {
+            return that.complement();
+        }
+
+        // A range of `self` is cut into at most one more piece than the number of ranges of
+        // `that` overlapping it, and those ranges are shared between at most two ranges of
+        // `self`, so the result never holds more than `self` and `that` together.
+        let mut new_range = Vec::with_capacity(self.0.len() + that.0.len());
+
+        // The first range of `that` that may still overlap the range of `self` being cut.
+        let mut that_i = 0;
+
+        for bounds in self.0.chunks_exact(2) {
+            let (mut min, max) = (bounds[0], bounds[1]);
+
+            // Skip the ranges of `that` that end before this one starts. They cannot overlap
+            // any later range of `self` either, so this stays linear overall.
+            while that_i + 1 < that.0.len() && that.0[that_i + 1] < min {
+                that_i += 2;
+            }
+
+            let mut j = that_i;
+            let mut covered = false;
+            while j + 1 < that.0.len() {
+                let (that_min, that_max) = (that.0[j], that.0[j + 1]);
+                if that_min > max {
+                    break;
+                }
+
+                // Keep what lies before the removed range.
+                if that_min > min {
+                    new_range.extend_from_slice(&[min, that_min - T::one()]);
+                }
+                if that_max >= max {
+                    covered = true;
+                    break;
+                }
+                // `that_max < max <= T::max_value()`, so this cannot overflow.
+                min = that_max + T::one();
+                j += 2;
+            }
+
+            // Keep what is left after the last removed range.
+            if !covered {
+                new_range.extend_from_slice(&[min, max]);
+            }
+        }
+
+        new_range.shrink_to_fit();
+        RangeSet(new_range)
+    }
+}
+
+impl<T: NumericInteger> Default for RangeSet<T> {
+    /// Return the empty set, like [`RangeSet::empty`].
+    #[inline]
+    fn default() -> RangeSet<T> {
+        RangeSet::empty()
+    }
+}
+
+impl<'a, T: NumericInteger> IntoIterator for &'a RangeSet<T> {
+    type Item = T;
+    type IntoIter = RangeSetIter<'a, T>;
+
+    /// Iterate in order over all the values contained, like [`RangeSet::iter`].
+    ///
+    /// # Example:
+    ///
+    /// ```
+    /// use irange::RangeSet;
+    ///
+    /// let range = RangeSet::new_from_range(2..=5);
+    ///
+    /// for value in &range {
+    ///     print!("{value} "); // 2 3 4 5
+    /// }
+    /// ```
+    #[inline]
+    fn into_iter(self) -> RangeSetIter<'a, T> {
+        self.iter()
+    }
+}
+
+impl<T: NumericInteger> FromIterator<AnyRange<T>> for RangeSet<T> {
+    /// Collect the given ranges into a single set, like [`RangeSet::new_from_ranges`].
+    ///
+    /// # Example:
+    ///
+    /// ```
+    /// use irange::range::AnyRange;
+    /// use irange::RangeSet;
+    ///
+    /// let range: RangeSet<i64> = [3..=4, 7..=8].into_iter().map(AnyRange::from).collect();
+    /// assert_eq!("[ 3..=4 7..=8 ]", range.to_string());
+    /// ```
+    fn from_iter<I: IntoIterator<Item = AnyRange<T>>>(iter: I) -> RangeSet<T> {
+        RangeSet::new_from_ranges(&iter.into_iter().collect::<Vec<_>>())
+    }
+}
+
+impl<T: NumericInteger> std::ops::BitOr<&RangeSet<T>> for &RangeSet<T> {
+    type Output = RangeSet<T>;
+
+    /// Compute the union, like [`RangeSet::union`].
+    ///
+    /// # Example:
+    ///
+    /// ```
+    /// use irange::RangeSet;
+    ///
+    /// let a = RangeSet::new_from_range(3..=4);
+    /// let b = RangeSet::new_from_range(7..=8);
+    /// assert_eq!("[ 3..=4 7..=8 ]", (&a | &b).to_string());
+    /// ```
+    #[inline]
+    fn bitor(self, that: &RangeSet<T>) -> RangeSet<T> {
+        self.union(that)
+    }
+}
+
+impl<T: NumericInteger> std::ops::BitAnd<&RangeSet<T>> for &RangeSet<T> {
+    type Output = RangeSet<T>;
+
+    /// Compute the intersection, like [`RangeSet::intersection`].
+    ///
+    /// # Example:
+    ///
+    /// ```
+    /// use irange::RangeSet;
+    ///
+    /// let a = RangeSet::new_from_range(3..=8);
+    /// let b = RangeSet::new_from_range(7..=9);
+    /// assert_eq!("[ 7..=8 ]", (&a & &b).to_string());
+    /// ```
+    #[inline]
+    fn bitand(self, that: &RangeSet<T>) -> RangeSet<T> {
+        self.intersection(that)
+    }
+}
+
+impl<T: NumericInteger> std::ops::Sub<&RangeSet<T>> for &RangeSet<T> {
+    type Output = RangeSet<T>;
+
+    /// Compute the difference, like [`RangeSet::difference`].
+    ///
+    /// # Example:
+    ///
+    /// ```
+    /// use irange::RangeSet;
+    ///
+    /// let a = RangeSet::new_from_range(3..=8);
+    /// let b = RangeSet::new_from_range(7..=9);
+    /// assert_eq!("[ 3..=6 ]", (&a - &b).to_string());
+    /// ```
+    #[inline]
+    fn sub(self, that: &RangeSet<T>) -> RangeSet<T> {
+        self.difference(that)
+    }
+}
+
+impl<T: NumericInteger> std::ops::Not for &RangeSet<T> {
+    type Output = RangeSet<T>;
+
+    /// Compute the complement, like [`RangeSet::complement`].
+    ///
+    /// # Example:
+    ///
+    /// ```
+    /// use irange::RangeSet;
+    ///
+    /// let a = RangeSet::<u8>::new_from_range(3..=254);
+    /// assert_eq!("[ 0..=2 255..=255 ]", (!&a).to_string());
+    /// ```
+    #[inline]
+    fn not(self) -> RangeSet<T> {
+        self.complement()
     }
 }
 
@@ -1233,7 +1522,18 @@ mod tests {
     fn test_malformed_range_set_does_not_panic() -> Result<(), String> {
         // A `RangeSet` can be built directly from its public field, so no operation may panic
         // on a malformed representation.
-        for bounds in [vec![0u8], vec![1, 5, 9], vec![5, 3], vec![10, 20, 0, 5]] {
+        for bounds in [
+            vec![0u8],
+            vec![1, 5, 9],
+            vec![5, 3],
+            vec![10, 20, 0, 5],
+            // Bounds sitting on the ends of the type, where stepping outside of a range
+            // would overflow.
+            vec![1, 255, 3, 5],
+            vec![255, 0],
+            vec![0, 0, 255, 255],
+            vec![255, 255, 0, 0],
+        ] {
             let malformed = RangeSet::<u8>(bounds);
             let _ = malformed.is_total();
             let _ = malformed.is_empty();
@@ -1337,6 +1637,97 @@ mod tests {
                 if values1 == values2 {
                     assert_eq!(range1, range2);
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_randomized_against_btree_set_over_the_whole_universe() -> Result<(), String> {
+        // `test_exhaustive_against_btree_set` only uses small values, so it never exercises the
+        // ranges that touch `u8::MIN` or `u8::MAX`. These sets are drawn from the whole universe
+        // and are dense enough to produce ranges at both ends.
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+
+        let subsets: Vec<(BTreeSet<u8>, RangeSet<u8>)> = (0..200)
+            .map(|_| {
+                // A varying density so that both sparse sets and sets spanning the whole
+                // universe are covered.
+                let density = (next() % 100) as u8;
+                let values: Vec<u8> = (0..=u8::MAX)
+                    .filter(|_| (next() % 100) as u8 <= density)
+                    .collect();
+                (
+                    values.iter().copied().collect(),
+                    range_set_from_values(&values),
+                )
+            })
+            .collect();
+
+        for (values, range) in &subsets {
+            assert_canonical(range);
+            assert_eq!(*values, range.iter().collect::<BTreeSet<_>>());
+
+            let complement = range.complement();
+            assert_canonical(&complement);
+            assert_eq!(
+                (0..=u8::MAX)
+                    .filter(|value| !values.contains(value))
+                    .collect::<BTreeSet<_>>(),
+                complement.iter().collect::<BTreeSet<_>>(),
+                "complement of {range}"
+            );
+        }
+
+        for (values1, range1) in &subsets {
+            for (values2, range2) in &subsets {
+                let union = range1.union(range2);
+                assert_canonical(&union);
+                assert_eq!(
+                    values1.union(values2).copied().collect::<BTreeSet<_>>(),
+                    union.iter().collect::<BTreeSet<_>>(),
+                    "{range1} union {range2}"
+                );
+
+                let intersection = range1.intersection(range2);
+                assert_canonical(&intersection);
+                assert_eq!(
+                    values1
+                        .intersection(values2)
+                        .copied()
+                        .collect::<BTreeSet<_>>(),
+                    intersection.iter().collect::<BTreeSet<_>>(),
+                    "{range1} intersection {range2}"
+                );
+
+                let difference = range1.difference(range2);
+                assert_canonical(&difference);
+                assert_eq!(
+                    values1
+                        .difference(values2)
+                        .copied()
+                        .collect::<BTreeSet<_>>(),
+                    difference.iter().collect::<BTreeSet<_>>(),
+                    "{range1} difference {range2}"
+                );
+
+                assert_eq!(
+                    !values1.is_disjoint(values2),
+                    range1.has_intersection(range2),
+                    "{range1} has_intersection {range2}"
+                );
+                assert_eq!(
+                    values2.is_subset(values1),
+                    range1.contains_all(range2),
+                    "{range1} contains_all {range2}"
+                );
             }
         }
 

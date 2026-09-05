@@ -2,28 +2,43 @@
 name = "irange"
 version = "1.2.0"
 edition = "2021"
+rust-version = "1.63"
 authors = ["Alexandre van Beurden"]
-repository = "https://github.com/alexvbrdn/irange"
-license = "MIT"
-keywords = ["range", "intersection", "union", "difference", "complement"]
 description = "A data structure to store and manipulate ranges of integers with set operations"
+repository = "https://github.com/alexvbrdn/irange"
+homepage = "https://github.com/alexvbrdn/irange"
+documentation = "https://docs.rs/irange"
+license = "MIT"
 readme = "README.md"
-exclude = [".github", ".gitignore"]
+keywords = ["range", "interval", "set", "intersection", "union"]
+categories = ["data-structures", "algorithms"]
+include = [
+    "/src/**/*.rs",
+    "/benches/**/*.rs",
+    "/tests/**/*.rs",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"], optional = true }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-rand = "0.8"
+criterion = { version = "0.8", features = ["html_reports"] }
+rand = "0.10"
 serde_json = "1.0"
 
 [features]
 serde = ["dep:serde"]
 
 [package.metadata.docs.rs]
-features = ["serde"]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.bench]
+codegen-units = 1
 
 [[bench]]
-name = "my_benchmark"
+name = "set_ops"
 harness = false

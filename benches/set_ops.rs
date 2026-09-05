@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use irange::{range::AnyRange, RangeSet};
-use rand::{seq::SliceRandom, thread_rng};
+use rand::seq::SliceRandom;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let range_regex_small_w = RangeSet(vec![
@@ -144,11 +144,21 @@ fn criterion_benchmark(c: &mut Criterion) {
         let (min, max) = (range_regex_small_d.0[i], range_regex_small_d.0[i + 1]);
         new_from_ranges.push(AnyRange::new(min, max));
     }
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     new_from_ranges.shuffle(&mut rng);
+
+    let mut sorted_ranges = Vec::with_capacity(range_regex_small_w.0.len() / 2);
+    for i in (0..range_regex_small_w.0.len()).step_by(2) {
+        let (min, max) = (range_regex_small_w.0[i], range_regex_small_w.0[i + 1]);
+        sorted_ranges.push(AnyRange::new(min, max));
+    }
 
     c.bench_function("new_from_ranges", |b| {
         b.iter(|| RangeSet::new_from_ranges(&new_from_ranges))
+    });
+
+    c.bench_function("new_from_ranges_sorted", |b| {
+        b.iter(|| RangeSet::new_from_ranges(&sorted_ranges))
     });
 
     c.bench_function("union", |b| {
@@ -177,6 +187,16 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("contains", |b| {
         b.iter(|| range_regex_small_w.contains(43790))
+    });
+
+    c.bench_function("contains_miss", |b| {
+        b.iter(|| range_regex_small_w.contains(43791))
+    });
+
+    c.bench_function("iter", |b| b.iter(|| range_regex_small_d.iter().count()));
+
+    c.bench_function("iter_collect", |b| {
+        b.iter(|| range_regex_small_d.iter().collect::<Vec<_>>())
     });
 }
 

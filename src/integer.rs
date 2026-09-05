@@ -33,168 +33,204 @@ pub trait Bounded {
 }
 
 impl Bounded for u8 {
+    #[inline]
     fn min_value() -> Self {
         u8::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         u8::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for u16 {
+    #[inline]
     fn min_value() -> Self {
         u16::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         u16::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for u32 {
+    #[inline]
     fn min_value() -> Self {
         u32::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         u32::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for u64 {
+    #[inline]
     fn min_value() -> Self {
         u64::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         u64::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for u128 {
+    #[inline]
     fn min_value() -> Self {
         u128::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         u128::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for usize {
+    #[inline]
     fn min_value() -> Self {
         usize::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         usize::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for i8 {
+    #[inline]
     fn min_value() -> Self {
         i8::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         i8::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for i16 {
+    #[inline]
     fn min_value() -> Self {
         i16::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         i16::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for i32 {
+    #[inline]
     fn min_value() -> Self {
         i32::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         i32::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for i64 {
+    #[inline]
     fn min_value() -> Self {
         i64::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         i64::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for i128 {
+    #[inline]
     fn min_value() -> Self {
         i128::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         i128::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
 }
 
 impl Bounded for isize {
+    #[inline]
     fn min_value() -> Self {
         isize::MIN
     }
 
+    #[inline]
     fn max_value() -> Self {
         isize::MAX
     }
 
+    #[inline]
     fn one() -> Self {
         1
     }
