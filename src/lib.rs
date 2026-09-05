@@ -1,9 +1,9 @@
 //! A data structure to store and manipulate ranges of integers with set operations.
 //!
 //! [`RangeSet`] holds an arbitrary set of integers as a sorted collection of
-//! non-overlapping inclusive ranges. It is compact for values that come in runs — a
+//! non-overlapping inclusive ranges. It is compact for values that come in runs: a
 //! set such as "every codepoint that is a word character" costs a handful of bounds
-//! rather than one entry per value — and it supports the usual set algebra:
+//! rather than one entry per value. It supports the usual set algebra:
 //! [`union`], [`intersection`], [`difference`], [`complement`], and the containment
 //! queries [`contains`] and [`contains_all`].
 //!
@@ -35,7 +35,7 @@
 //!
 //! Every set has exactly one such representation. The bounds are even in number, no
 //! range is inverted, and consecutive ranges are sorted and separated by at least one
-//! value — two ranges that touch, like `1..=2` and `3..=4`, are merged into `1..=4`.
+//! value, so two ranges that touch, like `1..=2` and `3..=4`, are merged into `1..=4`.
 //! The constructors maintain this invariant, and [`RangeSet::new_from_bounds`] checks
 //! it when you build a set from raw bounds. Writing to the public field directly
 //! bypasses the check and gives unspecified (but never panicking) results.
@@ -90,7 +90,7 @@
 //!
 //! # Feature flags
 //!
-//! - `serde` — implement `Serialize` and `Deserialize` for [`RangeSet`], using the flat
+//! - `serde`: implement `Serialize` and `Deserialize` for [`RangeSet`], using the flat
 //!   list of bounds as the serialized form. Deserializing validates the invariant above
 //!   and fails with a descriptive error rather than accepting a malformed set.
 //!
@@ -107,6 +107,11 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+
+/// The README, compiled and run as a doctest so its examples cannot go stale.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+mod readme {}
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -1282,37 +1287,6 @@ mod tests {
             vec![45, 238],
             RangeSet(vec![0, 44, 239, u32::MAX]).complement().0
         );
-
-        Ok(())
-    }
-
-    #[test]
-    fn readme() -> Result<(), String> {
-        let range1 =
-            RangeSet::<i64>::new_from_ranges(&[AnyRange::from(3..=4), AnyRange::from(7..9)]);
-
-        let range2 = RangeSet::<i64>::new_from_range(-2..=4);
-
-        let union = range1.union(&range2);
-        println!("{union}"); // [ -2..=4 7..=8 ]
-        for value in union.iter() {
-            print!("{value} "); // -2 -1 0 1 2 3 4 7 8
-        }
-        println!();
-
-        let intersection = range1.intersection(&range2);
-        println!("{intersection}"); // [ 3..=4 ]
-        for value in intersection.iter() {
-            print!("{value} "); // 3 4
-        }
-        println!();
-
-        let difference = range1.difference(&range2);
-        println!("{difference}"); // [ 7..=8 ]
-        for value in difference.iter() {
-            print!("{value} "); // 7 8
-        }
-        println!();
 
         Ok(())
     }

@@ -72,14 +72,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.63
-      - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
 
-      # The dev-dependencies need a far newer compiler than the crate itself, so they
-      # are stripped out. The `serde` feature is excluded for the same reason: it pulls
-      # in `serde_derive`, whose own dependencies raise the requirement past 1.63.
+      # The dev-dependencies need a far newer compiler than the crate itself, and Cargo
+      # resolves them even when nothing that uses them is being built, so they have to be
+      # gone before the lockfile is written. `cargo hack --no-dev-deps` cannot do this:
+      # it generates the lockfile before it edits the manifest.
+      - name: Drop the dev-dependencies
+        run: |
+          awk '/^\[/ { skip = ($0 == "[dev-dependencies]") } !skip' Cargo.toml > Cargo.toml.msrv
+          mv Cargo.toml.msrv Cargo.toml
+
+      # The `serde` feature is excluded for the same reason: it pulls in `serde_derive`,
+      # whose own dependencies raise the requirement past 1.63. This is what the README
+      # documents. `--all-targets` is omitted so the bench, which needs criterion, is not
+      # built.
       - name: Check against the declared MSRV
-        run: cargo hack check --no-dev-deps --no-default-features
+        run: cargo check --no-default-features
 
   package:
     name: Package
